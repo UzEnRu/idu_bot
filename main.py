@@ -63,7 +63,7 @@ async def handle_passport(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     # Agar bu tugma bo‘lsa, passport so‘rashga o‘t
     if passport_id == "🔍 Natijani ko‘rish":
-        await update.message.reply_text("👤 Iltimos, passport raqamingizni yuboring:")
+        await update.message.reply_text("👤 Iltimos, passport raqamingizni quyidagicha yuboring(AB1234567):")
         return ASK_PASSPORT
 
     await update.message.reply_text("🔄 Captcha olinmoqda...")
