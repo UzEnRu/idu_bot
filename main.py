@@ -1,7 +1,7 @@
-from telegram import Update, InputFile
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
     Application, CommandHandler, MessageHandler,
-    ConversationHandler, filters, ContextTypes
+    CallbackQueryHandler, ConversationHandler, filters, ContextTypes
 )
 from idu_bot import get_csrf_and_captcha, get_captcha_image, submit_form, extract_results
 import requests
@@ -9,9 +9,13 @@ import logging
 import json
 import os
 
+# Logging
 logging.basicConfig(level=logging.INFO)
+
+# Telegram bot token
 BOT_TOKEN = "7263433130:AAGznHKPVi7-SwfHwK8MkgLbf-O63mQi8nY"
 
+# HTTP session
 session = requests.Session()
 
 # States
@@ -23,6 +27,7 @@ user_data_store = {}
 # JSON file path
 DATA_FILE = "data.json"
 
+# Foydalanuvchi maʼlumotlarini faylga yozish
 def save_user_data(user_info):
     data = []
     if os.path.exists(DATA_FILE):
@@ -37,11 +42,35 @@ def save_user_data(user_info):
     with open(DATA_FILE, "w") as f:
         json.dump(data, f, indent=4, ensure_ascii=False)
 
-# /start komandasi
+# /start komandasi — interaktiv tugmalar bilan
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("👋 Salom! Iltimos, passport raqamingizni yuboring:")
+    keyboard = [
+        [InlineKeyboardButton("👀 See Results", callback_data="start_check")],
+        [InlineKeyboardButton("📞 Admin bilan bog‘lanish", callback_data="contact_admin")],
+        [InlineKeyboardButton("ℹ️ Yordam", callback_data="help")],
+        [InlineKeyboardButton("🔁 Qaytadan urinish", callback_data="retry")],
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+
+    await update.message.reply_text(
+        "👋 Salom!\nIltimos, quyidagi tugmalardan birini tanlang:",
+        reply_markup=reply_markup
+    )
+
+# Callback: See Results — passportni sorashni boshlaydi
+async def see_results_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    await query.message.reply_text("📄 Iltimos, passport raqamingizni yuboring:")
     return ASK_PASSPORT
 
+# Callback: qolgan tugmalar — hozircha faqat javob beradi
+async def placeholder_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    await query.message.reply_text("ℹ️ Ushbu funksiya hali mavjud emas.")
+
+# Passport qabul qilish
 async def handle_passport(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     user_id = user.id
@@ -56,7 +85,7 @@ async def handle_passport(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("❌ Captcha yoki token olishda xatolik:\n" + str(e))
         return ConversationHandler.END
 
-    # Save temporary data
+    # Saqlash
     user_data_store[user_id] = {
         "passport_id": passport_id,
         "csrf_token": csrf_token,
@@ -70,7 +99,7 @@ async def handle_passport(update: Update, context: ContextTypes.DEFAULT_TYPE):
         }
     }
 
-    # Send captcha image
+    # Captcha yuborish
     with open(image_path, "rb") as photo_file:
         await update.message.reply_photo(
             photo=photo_file,
@@ -79,11 +108,11 @@ async def handle_passport(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     return ASK_CAPTCHA
 
+# Captcha qabul qilish
 async def handle_captcha(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     captcha_text = update.message.text.strip()
 
-    # Extract saved data
     user_data = user_data_store.get(user_id)
     if not user_data:
         await update.message.reply_text("❌ Maʼlumotlar topilmadi. /start dan boshlang.")
@@ -99,7 +128,7 @@ async def handle_captcha(update: Update, context: ContextTypes.DEFAULT_TYPE):
         result = extract_results(html)
         await update.message.reply_text(result)
 
-        # Save user info to file
+        # JSON ga yozish
         save_user_data(user_data["user_info"])
 
     except Exception as e:
@@ -107,15 +136,20 @@ async def handle_captcha(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     return ConversationHandler.END
 
+# /cancel komandasi
 async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("❌ Bekor qilindi.")
     return ConversationHandler.END
 
+# Main
 if __name__ == "__main__":
     app = Application.builder().token(BOT_TOKEN).build()
 
     conv_handler = ConversationHandler(
-        entry_points=[CommandHandler("start", start)],
+        entry_points=[
+            CommandHandler("start", start),
+            CallbackQueryHandler(see_results_callback, pattern="^start_check$"),
+        ],
         states={
             ASK_PASSPORT: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_passport)],
             ASK_CAPTCHA: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_captcha)],
@@ -123,6 +157,8 @@ if __name__ == "__main__":
         fallbacks=[CommandHandler("cancel", cancel)],
     )
 
+    # Qo‘shimcha tugmalar uchun placeholder handler
+    app.add_handler(CallbackQueryHandler(placeholder_callback, pattern="^(contact_admin|help|retry)$"))
     app.add_handler(conv_handler)
 
     print("✅ Bot ishga tushdi...")
