@@ -1,3 +1,5 @@
 python-telegram-bot==21.5
 requests
 beautifulsoup4
+fastapi
+uvicorn
