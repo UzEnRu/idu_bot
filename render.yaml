@@ -1,0 +1,13 @@
+services:
+  - type: web
+    name: idu-bot
+    runtime: python
+    plan: free
+    buildCommand: ""
+    startCommand: uvicorn main:app --host 0.0.0.0 --port 10000
+    envVars:
+      - key: PORT
+        value: 10000
+      - key: BOT_TOKEN
+        value: 7263433130:AAGznHKPVi7-SwfHwK8MkgLbf-O63mQi8nY
+    autoDeploy: true
