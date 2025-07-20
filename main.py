@@ -9,17 +9,23 @@ import logging
 import json
 import os
 
+# Logging
 logging.basicConfig(level=logging.INFO)
 
+# Bot token va webhook URL
 BOT_TOKEN = "7263433130:AAGznHKPVi7-SwfHwK8MkgLbf-O63mQi8nY"
 WEBHOOK_URL = "https://idu-bot.onrender.com/webhook"
 
-session = requests.Session()
+# Telegram Application
+telegram_app = Application.builder().token(BOT_TOKEN).build()
 
+# Session va conversation holatlari
+session = requests.Session()
 ASK_PASSPORT, ASK_CAPTCHA = range(2)
 user_data_store = {}
 DATA_FILE = "data.json"
 
+# User ma'lumotlarini saqlash
 def save_user_data(user_info):
     data = []
     if os.path.exists(DATA_FILE):
@@ -32,6 +38,7 @@ def save_user_data(user_info):
     with open(DATA_FILE, "w") as f:
         json.dump(data, f, indent=4, ensure_ascii=False)
 
+# /start handler
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     keyboard = [
         [KeyboardButton("🔍 Natijani ko‘rish")],
@@ -47,13 +54,16 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_html(welcome_text, reply_markup=reply_markup)
     return ASK_PASSPORT
 
+# Pasport so‘rash handler
 async def handle_passport(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     user_id = user.id
     passport_id = update.message.text.strip()
+
     if passport_id == "🔍 Natijani ko‘rish":
-        await update.message.reply_text("👤 Iltimos, passport raqamingizni quyidagicha yuboring(AB1234567):")
+        await update.message.reply_text("👤 Iltimos, passport raqamingizni quyidagicha yuboring (AB1234567):")
         return ASK_PASSPORT
+
     await update.message.reply_text("🔄 Captcha olinmoqda...")
 
     try:
@@ -83,10 +93,12 @@ async def handle_passport(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
     return ASK_CAPTCHA
 
+# Captcha javobini olish handler
 async def handle_captcha(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     captcha_text = update.message.text.strip()
     user_data = user_data_store.get(user_id)
+
     if not user_data:
         await update.message.reply_text("❌ Maʼlumotlar topilmadi. /start dan boshlang.")
         return ConversationHandler.END
@@ -105,18 +117,34 @@ async def handle_captcha(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(f"❌ Xatolik yuz berdi:\n{e}")
     return ConversationHandler.END
 
+# Bekor qilish
 async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("❌ Bekor qilindi.")
     return ConversationHandler.END
 
-# 🌐 Webhook endpoint
+# 🌐 FastAPI app & webhook
 from fastapi import FastAPI, Request
 from telegram import Update as TgUpdate
 import uvicorn
 
 app = FastAPI()
-telegram_app = Application.builder().token(BOT_TOKEN).build()
 
+# Startup event: initialize, start, and set webhook
+@app.on_event("startup")
+async def startup():
+    await telegram_app.initialize()
+    await telegram_app.start()
+    await telegram_app.bot.set_webhook(WEBHOOK_URL)
+
+# Webhook endpoint
+@app.post("/webhook")
+async def telegram_webhook(req: Request):
+    data = await req.json()
+    update = TgUpdate.de_json(data, telegram_app.bot)
+    await telegram_app.process_update(update)
+    return {"status": "ok"}
+
+# Bot handler
 conv_handler = ConversationHandler(
     entry_points=[CommandHandler("start", start)],
     states={
@@ -131,16 +159,6 @@ conv_handler = ConversationHandler(
 
 telegram_app.add_handler(conv_handler)
 
-@app.on_event("startup")
-async def startup():
-    await telegram_app.bot.set_webhook(WEBHOOK_URL)
-
-@app.post("/webhook")
-async def telegram_webhook(req: Request):
-    data = await req.json()
-    update = TgUpdate.de_json(data, telegram_app.bot)
-    await telegram_app.process_update(update)
-    return {"status": "ok"}
-
+# Local dev uchun
 if __name__ == "__main__":
     uvicorn.run("main:app", host="0.0.0.0", port=10000)
