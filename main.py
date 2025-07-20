@@ -1,7 +1,7 @@
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram import Update, InputFile, ReplyKeyboardMarkup, KeyboardButton
 from telegram.ext import (
     Application, CommandHandler, MessageHandler,
-    CallbackQueryHandler, ConversationHandler, filters, ContextTypes
+    ConversationHandler, filters, ContextTypes
 )
 from idu_bot import get_csrf_and_captcha, get_captcha_image, submit_form, extract_results
 import requests
@@ -9,13 +9,9 @@ import logging
 import json
 import os
 
-# Logging
 logging.basicConfig(level=logging.INFO)
-
-# Telegram bot token
 BOT_TOKEN = "7263433130:AAGznHKPVi7-SwfHwK8MkgLbf-O63mQi8nY"
 
-# HTTP session
 session = requests.Session()
 
 # States
@@ -27,7 +23,6 @@ user_data_store = {}
 # JSON file path
 DATA_FILE = "data.json"
 
-# Foydalanuvchi maʼlumotlarini faylga yozish
 def save_user_data(user_info):
     data = []
     if os.path.exists(DATA_FILE):
@@ -42,39 +37,34 @@ def save_user_data(user_info):
     with open(DATA_FILE, "w") as f:
         json.dump(data, f, indent=4, ensure_ascii=False)
 
-# /start komandasi — interaktiv tugmalar bilan
+# 📍 START — show welcome and buttons
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     keyboard = [
-        [InlineKeyboardButton("👀 See Results", callback_data="start_check")],
-        [InlineKeyboardButton("📞 Admin bilan bog‘lanish", callback_data="contact_admin")],
-        [InlineKeyboardButton("ℹ️ Yordam", callback_data="help")],
-        [InlineKeyboardButton("🔁 Qaytadan urinish", callback_data="retry")],
+        [KeyboardButton("🔍 Natijani ko‘rish")],
+        [KeyboardButton("📞 Admin bilan bog‘lanish"), KeyboardButton("ℹ️ Yordam")],
+        [KeyboardButton("🔁 Qaytadan urinish")]
     ]
-    reply_markup = InlineKeyboardMarkup(keyboard)
+    reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
 
-    await update.message.reply_text(
-        "👋 Salom!\nIltimos, quyidagi tugmalardan birini tanlang:",
-        reply_markup=reply_markup
+    welcome_text = (
+        "🎓 <b>Bu — IDU Universitetining Rasmiy Telegram Boti!</b>\n\n"
+        "📋 Ushbu bot orqali siz imtihon natijalaringizni osonlik bilan bilib olishingiz mumkin.\n\n"
+        "🚀 Boshlash uchun pastdagi tugmani bosing:"
     )
 
-# Callback: See Results — passportni sorashni boshlaydi
-async def see_results_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.answer()
-    await query.message.reply_text("📄 Iltimos, passport raqamingizni yuboring:")
+    await update.message.reply_html(welcome_text, reply_markup=reply_markup)
     return ASK_PASSPORT
 
-# Callback: qolgan tugmalar — hozircha faqat javob beradi
-async def placeholder_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.answer()
-    await query.message.reply_text("ℹ️ Ushbu funksiya hali mavjud emas.")
-
-# Passport qabul qilish
+# 👤 Handle passport input
 async def handle_passport(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     user_id = user.id
     passport_id = update.message.text.strip()
+
+    # Agar bu tugma bo‘lsa, passport so‘rashga o‘t
+    if passport_id == "🔍 Natijani ko‘rish":
+        await update.message.reply_text("👤 Iltimos, passport raqamingizni yuboring:")
+        return ASK_PASSPORT
 
     await update.message.reply_text("🔄 Captcha olinmoqda...")
 
@@ -85,7 +75,7 @@ async def handle_passport(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("❌ Captcha yoki token olishda xatolik:\n" + str(e))
         return ConversationHandler.END
 
-    # Saqlash
+    # Save temporary data
     user_data_store[user_id] = {
         "passport_id": passport_id,
         "csrf_token": csrf_token,
@@ -99,7 +89,6 @@ async def handle_passport(update: Update, context: ContextTypes.DEFAULT_TYPE):
         }
     }
 
-    # Captcha yuborish
     with open(image_path, "rb") as photo_file:
         await update.message.reply_photo(
             photo=photo_file,
@@ -108,7 +97,7 @@ async def handle_passport(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     return ASK_CAPTCHA
 
-# Captcha qabul qilish
+# 🔐 Handle CAPTCHA input
 async def handle_captcha(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     captcha_text = update.message.text.strip()
@@ -128,7 +117,7 @@ async def handle_captcha(update: Update, context: ContextTypes.DEFAULT_TYPE):
         result = extract_results(html)
         await update.message.reply_text(result)
 
-        # JSON ga yozish
+        # Save to file
         save_user_data(user_data["user_info"])
 
     except Exception as e:
@@ -136,29 +125,26 @@ async def handle_captcha(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     return ConversationHandler.END
 
-# /cancel komandasi
+# ❌ Cancel command
 async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("❌ Bekor qilindi.")
     return ConversationHandler.END
 
-# Main
 if __name__ == "__main__":
     app = Application.builder().token(BOT_TOKEN).build()
 
     conv_handler = ConversationHandler(
-        entry_points=[
-            CommandHandler("start", start),
-            CallbackQueryHandler(see_results_callback, pattern="^start_check$"),
-        ],
+        entry_points=[CommandHandler("start", start)],
         states={
-            ASK_PASSPORT: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_passport)],
+            ASK_PASSPORT: [
+                MessageHandler(filters.TEXT & filters.Regex("🔍 Natijani ko‘rish"), handle_passport),
+                MessageHandler(filters.TEXT & ~filters.COMMAND, handle_passport)
+            ],
             ASK_CAPTCHA: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_captcha)],
         },
         fallbacks=[CommandHandler("cancel", cancel)],
     )
 
-    # Qo‘shimcha tugmalar uchun placeholder handler
-    app.add_handler(CallbackQueryHandler(placeholder_callback, pattern="^(contact_admin|help|retry)$"))
     app.add_handler(conv_handler)
 
     print("✅ Bot ishga tushdi...")
