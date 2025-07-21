@@ -3,8 +3,7 @@ from telegram.ext import ContextTypes
 
 async def contact_admin(update: Update, context: ContextTypes.DEFAULT_TYPE):
     keyboard = InlineKeyboardMarkup([
-        [InlineKeyboardButton("📬 Xabar yuborish", url="https://t.me/thelxn")],
-        [InlineKeyboardButton("🔙 Orqaga", callback_data="go_back")]
+        [InlineKeyboardButton("📬 Xabar yuborish", url="https://t.me/thelxn")]
     ])
 
     text = (
