@@ -4,41 +4,38 @@ from bs4 import BeautifulSoup
 BASE_URL = "https://result.idu.uz"
 
 def get_csrf_and_captcha(session):
-    response = session.get(BASE_URL)
-    soup = BeautifulSoup(response.text, "html.parser")
+    resp = session.get(BASE_URL)
+    soup = BeautifulSoup(resp.text, "html.parser")
+    csrf = soup.find("input", {"name": "_csrf-frontend"})["value"]
+    captcha_src = soup.find("img", id="resultform-verifycode-image")["src"]
+    return csrf, BASE_URL + captcha_src
 
-    csrf_token = soup.find("input", {"name": "_csrf-frontend"})["value"]
-    captcha_img = soup.find("img", {"id": "resultform-verifycode-image"})["src"]
-    captcha_url = BASE_URL + captcha_img
-
-    return csrf_token, captcha_url
-
-def get_captcha_image(session, url):
+def download_captcha(session, url):
     r = session.get(url, stream=True)
     if r.status_code == 200:
-        with open("captcha.jpg", "wb") as f:
+        path = "captcha.jpg"
+        with open(path, "wb") as f:
             f.write(r.content)
-        return "captcha.jpg"
+        return path
     return None
 
-def submit_form(session, passport_id, captcha_text, csrf_token):
-    payload = {
+def submit_result(session, passport, captcha, csrf_token):
+    data = {
         "_csrf-frontend": csrf_token,
-        "ResultForm[passportId]": passport_id,
-        "ResultForm[verifyCode]": captcha_text
+        "ResultForm[passportId]": passport,
+        "ResultForm[verifyCode]": captcha
     }
-    response = session.post(BASE_URL + "/", data=payload)
-    return response.text
+    resp = session.post(BASE_URL + "/", data=data)
+    return resp.text
 
-def extract_results(html):
+def parse_result(html):
     soup = BeautifulSoup(html, "html.parser")
-    result_block = soup.find("div", class_="block-heading")
+    heading = soup.find("div", class_="block-heading")
 
-    if not result_block:
-        return "❌ Ma'lumot topilmadi. Ehtimol captcha yoki passport noto‘g‘ri."
+    if not heading:
+        return "❌ Ma'lumot topilmadi. Ehtimol passport yoki captcha noto‘g‘ri."
 
-    name = result_block.find("h1").text.strip()
-    result_texts = result_block.find_all("h1", class_="text-primary")
-    results = "\n".join(r.text.strip() for r in result_texts)
-
+    name = heading.find("h1").text.strip()
+    scores = heading.find_all("h1", class_="text-primary")
+    results = "\n".join(r.text.strip() for r in scores)
     return f"✅ {name}\n{results}"
