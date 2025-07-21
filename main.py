@@ -8,12 +8,13 @@ import requests
 import logging
 import json
 import os
-
+from dotenv import load_dotenv
+load_dotenv()
 # Logging
 logging.basicConfig(level=logging.INFO)
 
 # Token va URL
-BOT_TOKEN = os.getenv("7263433130:AAGznHKPVi7-SwfHwK8MkgLbf-O63mQi8nY")
+BOT_TOKEN = os.getenv("BOT_TOKEN")
 WEBHOOK_URL = "https://idu-bot.onrender.com/webhook"
 
 telegram_app = Application.builder().token(BOT_TOKEN).build()
