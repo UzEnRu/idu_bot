@@ -12,20 +12,27 @@ import os
 # Logging
 logging.basicConfig(level=logging.INFO)
 
-# Bot token va webhook URL
+# Token va webhook URL
 BOT_TOKEN = "7263433130:AAGznHKPVi7-SwfHwK8MkgLbf-O63mQi8nY"
 WEBHOOK_URL = "https://idu-bot.onrender.com/webhook"
 
-# Telegram Application
 telegram_app = Application.builder().token(BOT_TOKEN).build()
 
-# Session va conversation holatlari
+# Session & States
 session = requests.Session()
 ASK_PASSPORT, ASK_CAPTCHA = range(2)
 user_data_store = {}
 DATA_FILE = "data.json"
 
-# User ma'lumotlarini saqlash
+# Klaviatura
+keyboard = [
+    [KeyboardButton("🔍 Natijani ko‘rish")],
+    [KeyboardButton("📞 Admin bilan bog‘lanish"), KeyboardButton("ℹ️ Yordam")],
+    [KeyboardButton("🔁 Qaytadan urinish")]
+]
+reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
+
+# User ma’lumotlarini saqlash
 def save_user_data(user_info):
     data = []
     if os.path.exists(DATA_FILE):
@@ -40,30 +47,26 @@ def save_user_data(user_info):
 
 # /start handler
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    keyboard = [
-        [KeyboardButton("🔍 Natijani ko‘rish")],
-        [KeyboardButton("📞 Admin bilan bog‘lanish"), KeyboardButton("ℹ️ Yordam")],
-        [KeyboardButton("🔁 Qaytadan urinish")]
-    ]
-    reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
     welcome_text = (
         "🎓 <b>Bu — IDU Universitetining Rasmiy Telegram Boti!</b>\n\n"
         "📋 Ushbu bot orqali siz imtihon natijalaringizni osonlik bilan bilib olishingiz mumkin.\n\n"
         "🚀 Boshlash uchun pastdagi tugmani bosing:"
     )
     await update.message.reply_html(welcome_text, reply_markup=reply_markup)
-    return ASK_PASSPORT
 
-# Pasport so‘rash handler
+# 🔍 tugmasi yoki passport kiritsangiz
 async def handle_passport(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     user_id = user.id
-    passport_id = update.message.text.strip()
+    text = update.message.text.strip()
 
-    if passport_id == "🔍 Natijani ko‘rish":
+    # Tugma bosilgan bo‘lsa, passportni so‘raymiz
+    if text in ["🔍 Natijani ko‘rish", "🔁 Qaytadan urinish"]:
         await update.message.reply_text("👤 Iltimos, passport raqamingizni quyidagicha yuboring (AB1234567):")
         return ASK_PASSPORT
 
+    # Aks holda, bu passport raqam deb qabul qilamiz
+    passport_id = text
     await update.message.reply_text("🔄 Captcha olinmoqda...")
 
     try:
@@ -91,6 +94,7 @@ async def handle_passport(update: Update, context: ContextTypes.DEFAULT_TYPE):
             photo=photo_file,
             caption="📸 Iltimos, ushbu captcha rasmdagi matnni kiriting:"
         )
+
     return ASK_CAPTCHA
 
 # Captcha javobini olish handler
@@ -100,7 +104,7 @@ async def handle_captcha(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_data = user_data_store.get(user_id)
 
     if not user_data:
-        await update.message.reply_text("❌ Maʼlumotlar topilmadi. /start dan boshlang.")
+        await update.message.reply_text("❌ Maʼlumotlar topilmadi. Iltimos, /start dan boshlang.")
         return ConversationHandler.END
 
     passport_id = user_data["passport_id"]
@@ -111,15 +115,26 @@ async def handle_captcha(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         html = submit_form(session, passport_id, captcha_text, csrf_token)
         result = extract_results(html)
-        await update.message.reply_text(result)
+        await update.message.reply_text(result, reply_markup=reply_markup)
         save_user_data(user_data["user_info"])
     except Exception as e:
-        await update.message.reply_text(f"❌ Xatolik yuz berdi:\n{e}")
+        await update.message.reply_text(f"❌ Xatolik yuz berdi:\n{e}", reply_markup=reply_markup)
+
     return ConversationHandler.END
+
+# Admin va Yordam tugmalari
+async def handle_other_buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    text = update.message.text
+    if text == "📞 Admin bilan bog‘lanish":
+        await update.message.reply_text("📞 Admin: @admin_username")
+    elif text == "ℹ️ Yordam":
+        await update.message.reply_text("ℹ️ Yordam uchun: pasport raqamingizni kiriting, captcha ni to‘g‘ri yozing.")
+    else:
+        await update.message.reply_text("❓ Nomaʼlum buyruq. Pastdagi menyudan foydalaning.")
 
 # Bekor qilish
 async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("❌ Bekor qilindi.")
+    await update.message.reply_text("❌ Bekor qilindi.", reply_markup=reply_markup)
     return ConversationHandler.END
 
 # 🌐 FastAPI app & webhook
@@ -129,14 +144,12 @@ import uvicorn
 
 app = FastAPI()
 
-# Startup event: initialize, start, and set webhook
 @app.on_event("startup")
 async def startup():
     await telegram_app.initialize()
     await telegram_app.start()
     await telegram_app.bot.set_webhook(WEBHOOK_URL)
 
-# Webhook endpoint
 @app.post("/webhook")
 async def telegram_webhook(req: Request):
     data = await req.json()
@@ -144,21 +157,32 @@ async def telegram_webhook(req: Request):
     await telegram_app.process_update(update)
     return {"status": "ok"}
 
-# Bot handler
+# 🧠 Conversation handler
 conv_handler = ConversationHandler(
-    entry_points=[CommandHandler("start", start)],
+    entry_points=[
+        MessageHandler(filters.TEXT & filters.Regex("🔍 Natijani ko‘rish"), handle_passport),
+        MessageHandler(filters.TEXT & filters.Regex("🔁 Qaytadan urinish"), handle_passport),
+        MessageHandler(filters.TEXT & ~filters.COMMAND, handle_passport),
+        CommandHandler("start", start),
+    ],
     states={
         ASK_PASSPORT: [
-            MessageHandler(filters.TEXT & filters.Regex("🔍 Natijani ko‘rish"), handle_passport),
-            MessageHandler(filters.TEXT & ~filters.COMMAND, handle_passport)
+            MessageHandler(filters.TEXT & ~filters.COMMAND, handle_passport),
         ],
-        ASK_CAPTCHA: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_captcha)],
+        ASK_CAPTCHA: [
+            MessageHandler(filters.TEXT & ~filters.COMMAND, handle_captcha),
+        ],
     },
     fallbacks=[CommandHandler("cancel", cancel)],
 )
 
 telegram_app.add_handler(conv_handler)
 
-# Local dev uchun
+# Qo‘shimcha tugmalarni tutuvchi umumiy handler
+telegram_app.add_handler(
+    MessageHandler(filters.TEXT & filters.Regex("📞|ℹ️"), handle_other_buttons)
+)
+
+# Local test uchun
 if __name__ == "__main__":
     uvicorn.run("main:app", host="0.0.0.0", port=10000)
