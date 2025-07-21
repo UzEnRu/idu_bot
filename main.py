@@ -13,7 +13,7 @@ import os
 logging.basicConfig(level=logging.INFO)
 
 # Token va URL
-BOT_TOKEN = os.getenv("BOT_TOKEN")
+BOT_TOKEN = os.getenv("7263433130:AAGznHKPVi7-SwfHwK8MkgLbf-O63mQi8nY")
 WEBHOOK_URL = "https://idu-bot.onrender.com/webhook"
 
 telegram_app = Application.builder().token(BOT_TOKEN).build()
